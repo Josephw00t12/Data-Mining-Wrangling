@@ -1,0 +1,188 @@
+---
+title: "SEC1-SA2 Group 2-Espiritu"
+author: "Espiritu, Joseph Raphael"
+date: "2026-05-10"
+output:
+  html_document: default
+  pdf_document:
+    latex_engine: xelatex
+---
+```{r setup, include=FALSE}
+library(tidyverse)
+library(caret)
+library(pROC)
+library(car)
+library(corrplot)
+library(e1071)
+
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+# **A. Machine Learning Models for Customer Churn**   
+  *Title: Predicting Customer Churn with Regression-Based and Tree-Based Methods*  
+
+## *1. Introduction*
+
+Customer churn, also known as customer attrition or turnover, is the percentage of customers who stop doing business, cancel subscriptions, or discontinue using a company’s services over a specific period. Predicting customer behavior through data-driven approaches allows companies to identify customers who are likely to cancel their subscriptions and implement retention strategies before churn occurs. This study utilizes the Orange Telecom Churn Dataset, which contains customer usage information and churn labels indicating whether a customer canceled their subscription. The dataset was divided into an 80% training and cross-validation set (churn-bigml-80) and a 20% testing and evaluation set (churn-bigml-20). The primary objective of this study is to build and evaluate regression-based and tree-based machine learning models capable of predicting customer churn and comparing their predictive performance.  
+
+## *2. Methodology*
+
+### 2.1 Data Description
+```{r}
+# Load training and testing datasets
+churn_train <- read.csv("churn-bigml-80.csv")
+churn_test  <- read.csv("churn-bigml-20.csv")
+
+# Dimensions
+dim(churn_train)
+dim(churn_test)
+
+# Display Variable Types
+str(churn_train)
+str(churn_test)
+```
+
+The training dataset (churn_train) contains 2,666 observations and 20 variables, while the testing dataset (churn_test) contains 667 observations and 20 variables, reflecting the intended 80/20 dataset split for machine learning model development and evaluation. The dataset consists of both numerical and categorical variables related to customer account information, call usage behavior, service plans, and customer service interactions, with the Churn variable serving as the target classification outcome.  
+
+```{r}
+# Summary Statistics
+summary(churn_train)
+summary(churn_test)
+```
+
+The summary statistics indicate that the training and testing datasets have relatively similar distributions across numerical variables, suggesting that the 80/20 split was balanced and appropriate for machine learning analysis. Variables such as total day minutes, evening minutes, night minutes, and customer service calls show noticeable variability among customers, which may contribute significantly to predicting customer churn behavior.  
+
+### 2.2 Data Preprocessing
+
+```{r}
+## Remove Non-Predictive Identifier Variables
+# Remove identifiers
+churn_train <- churn_train %>%
+  select(-State, -Area.code)
+
+churn_test <- churn_test %>%
+  select(-State, -Area.code)
+
+# Verify removal
+colnames(churn_train)
+colnames(churn_test)
+
+## Convert Churn into Binary Variable
+
+# Checking 
+table(churn_train$Churn)
+table(churn_test$Churn)
+
+#Convert into binary factor values.
+churn_train$Churn <- factor(
+  churn_train$Churn,
+  levels = c("False", "True"),
+  labels = c(0, 1)
+)
+
+churn_test$Churn <- factor(
+  churn_test$Churn,
+  levels = c("False", "True"),
+  labels = c(0, 1)
+)
+
+# Verify factor conversion
+table(churn_train$Churn)
+table(churn_test$Churn)
+str(churn_train$Churn)
+str(churn_test$Churn)
+
+# Convert categorical variables into factors
+churn_train$International.plan <- as.factor(churn_train$International.plan)
+churn_train$Voice.mail.plan <- as.factor(churn_train$Voice.mail.plan)
+
+churn_test$International.plan <- as.factor(churn_test$International.plan)
+churn_test$Voice.mail.plan <- as.factor(churn_test$Voice.mail.plan)
+
+# Verify factor conversion
+str(churn_train$International.plan)
+str(churn_train$Voice.mail.plan)
+str(churn_test$International.plan)
+str(churn_test$Voice.mail.plan)
+
+# Apply One-Hot Encoding
+
+#This converts factor variables into machine-learning-friendly numeric columns.
+# Create dummy variable model
+dummy_model <- dummyVars(Churn ~ ., data = churn_train)
+
+# Apply encoding
+train_encoded <- predict(dummy_model, newdata = churn_train)
+test_encoded  <- predict(dummy_model, newdata = churn_test)
+
+# Convert to data frames
+train_encoded <- as.data.frame(train_encoded)
+test_encoded  <- as.data.frame(test_encoded)
+
+# Add target variable back
+train_encoded$Churn <- churn_train$Churn
+test_encoded$Churn  <- churn_test$Churn
+
+# Preview encoded data
+head(train_encoded)
+head(test_encoded)
+
+# Check missing values
+sum(is.na(train_encoded))
+sum(is.na(test_encoded)) 
+
+# Structure of encoded training data
+str(train_encoded)
+
+# Dataset dimensions
+dim(train_encoded)
+dim(test_encoded)
+```
+
+The dataset underwent several preprocessing procedures to prepare the data for machine learning analysis. Non-predictive identifier variables such as State and Area.code were removed to reduce irrelevant information, while the target variable Churn was converted into a binary factor variable where 0 represented non-churn customers and 1 represented churn customers. Additionally, categorical variables were transformed into factor data types and encoded using one-hot encoding to convert them into numerical representations compatible with machine learning algorithms, followed by missing value verification to ensure data quality and completeness.
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+### 2.3  Exploratory Data Analysis
+### 2.4 Model Building
+### 2.5 Model Evaluation
+
+## *3. Results*
+## *4. Discussion*
+## *5. Conclusion*
+
+# **B. Deep Learning Classification Task** 
+  *Title: Neural Networks and Logistic Regression on the Default Dataset*
+
+## *1. Introduction*
+
+
+
+## *2. Methodology*
+
+### 2.1 Data Description
+### 2.2 Data Preprocessing
+### 2.3  Exploratory Data Analysis
+### 2.4 Model Building
+### 2.5 Model Evaluation
+
+## *3. Results*
+## *4. Discussion*
+## *5. Conclusion*
+
+### References:
+
+# GitHub repository link:

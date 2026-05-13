@@ -8,12 +8,19 @@ output:
     latex_engine: xelatex
 ---
 ```{r setup, include=FALSE}
+# Package Install
+# install.packages( c("tidyverse", "caret", "pROC", "car", "corrplot", "e1071", "glmnet", "rpart", "rpart.plot", "randomForest", "gbm"), repos = "https://cloud.r-project.org" )
+
 library(tidyverse)
 library(caret)
 library(pROC)
-library(car)
 library(corrplot)
 library(e1071)
+library(glmnet)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(gbm)
 
 knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 ```
@@ -58,10 +65,10 @@ The summary statistics indicate that the training and testing datasets have rela
 ## Remove Non-Predictive Identifier Variables
 # Remove identifiers
 churn_train <- churn_train %>%
-  select(-State, -Area.code)
+  dplyr::select(-State, -Area.code)
 
 churn_test <- churn_test %>%
-  select(-State, -Area.code)
+  dplyr::select(-State, -Area.code)
 
 # Verify removal
 colnames(churn_train)
@@ -112,8 +119,8 @@ str(churn_test$Voice.mail.plan)
 dummy_model <- dummyVars(Churn ~ ., data = churn_train)
 
 # Apply encoding
-train_encoded <- predict(dummy_model, newdata = churn_train)
-test_encoded  <- predict(dummy_model, newdata = churn_test)
+train_encoded <- stats::predict(dummy_model, newdata = churn_train)
+test_encoded  <- stats::predict(dummy_model, newdata = churn_test)
 
 # Convert to data frames
 train_encoded <- as.data.frame(train_encoded)
@@ -127,40 +134,756 @@ test_encoded$Churn  <- churn_test$Churn
 head(train_encoded)
 head(test_encoded)
 
-# Check missing values
-sum(is.na(train_encoded))
-sum(is.na(test_encoded)) 
-
 # Structure of encoded training data
 str(train_encoded)
+str(test_encoded)
 
 # Dataset dimensions
 dim(train_encoded)
 dim(test_encoded)
+
+# Check missing values
+sum(is.na(train_encoded))
+sum(is.na(test_encoded)) 
 ```
 
 The dataset underwent several preprocessing procedures to prepare the data for machine learning analysis. Non-predictive identifier variables such as State and Area.code were removed to reduce irrelevant information, while the target variable Churn was converted into a binary factor variable where 0 represented non-churn customers and 1 represented churn customers. Additionally, categorical variables were transformed into factor data types and encoded using one-hot encoding to convert them into numerical representations compatible with machine learning algorithms, followed by missing value verification to ensure data quality and completeness.
 
-```{r}
-```
-
-```{r}
-```
-
-```{r}
-```
-
-```{r}
-```
-
-```{r}
-```
-
 ### 2.3  Exploratory Data Analysis
-### 2.4 Model Building
-### 2.5 Model Evaluation
 
-## *3. Results*
+```{r}
+# A. Churn Rate Analysis
+
+## Frequency Table
+table(churn_train$Churn)
+prop.table(table(churn_train$Churn))
+
+# Bar Plot of Churn Distribution
+ggplot(churn_train, aes(x = Churn)) +
+  geom_bar(fill = "steelblue") +
+  
+  geom_text(
+    stat = "count",
+    aes(label = after_stat(count)),
+    vjust = -0.5
+  ) +
+  scale_x_discrete(
+    labels = c(
+      "0" = "Retained Customer",
+      "1" = "Customer Left"
+    )
+  ) +
+  ylim(0, 2500) +
+  labs(
+    title = "Figure 1. Distribution of Customer Retention Status",
+    x = "Customer Status",
+    y = "Frequency"
+  ) +
+  
+  theme_minimal()
+```
+
+Figure 1 shows that the majority of customers were retained, with 2,278 observations (85.45%), while only 388 customers (14.55%) left the subscription service. This indicates the presence of class imbalance within the dataset, which may influence machine learning model performance by favoring predictions toward the majority retained-customer class.
+
+```{r}
+numeric_data <- train_encoded %>%
+  dplyr::select(where(is.numeric))
+
+# Correlation matrix
+cor_matrix <- cor(numeric_data)
+
+# Correlation plot
+corrplot(
+  cor_matrix,
+  method = "color",
+  type = "upper",
+  
+  col = colorRampPalette(c("red", "white", "blue"))(200),
+  
+  addCoef.col = "black",
+  
+  tl.col = "black",
+  tl.cex = 0.7,
+  number.cex = 0.5,
+  tl.srt = 45,
+  
+  order = "hclust",
+  diag = FALSE,
+  
+  main = "Figure 2. Correlation Heatmap of Numerical Variables",
+  
+  mar = c(0, 0, 2, 0)
+)
+```
+
+Figure 2 shows that several variables have extremely high positive correlations, particularly between call minute variables and their corresponding charge variables such as Total.day.minutes and Total.day.charge, because charges are directly calculated from usage minutes. Additionally, the strong correlation between encoded categorical pairs such as Voice.mail.plan.Yes and Voice.mail.plan.No is expected due to one-hot encoding, where the presence of one category automatically implies the absence of the other category.
+
+```{r}
+# Boxplot of Customer Service Calls by Churn Status
+ggplot(churn_train,
+       aes(x = Churn,
+           y = Customer.service.calls,
+           fill = Churn)) +
+  
+  geom_boxplot() +
+  
+  scale_x_discrete(
+    labels = c(
+      "0" = "Retained Customer",
+      "1" = "Customer Left"
+    )
+  ) +
+  
+  labs(
+    title = "Figure 3. Customer Service Calls by Customer Status",
+    x = "Customer Status",
+    y = "Number of Customer Service Calls"
+  ) +
+  
+  theme_minimal() +
+  theme(
+    legend.position = "none"
+  )
+```
+
+Figure 3 indicates that customers who left the subscription service generally made more customer service calls compared to retained customers. The higher median and wider spread among customers who left suggest that frequent interactions with customer support may be associated with customer dissatisfaction and an increased likelihood of churn.
+
+```{r}
+# Distribution of Total Day Minutes
+ggplot(churn_train,
+       aes(x = Total.day.minutes)) +
+  
+  geom_histogram(
+    bins = 20,
+    fill = "steelblue",
+    color = "black"
+  ) +
+  
+  labs(
+    title = "Figure 4. Distribution of Total Day Minutes",
+    x = "Total Day Minutes",
+    y = "Frequency"
+  ) +
+  
+  theme_minimal()
+```
+
+Figure 4 represents the total number of daytime call minutes used by a customer during the billing period. Its shows that the distribution of total day minutes is approximately bell-shaped, with most customers using between 100 and 250 total daytime minutes. The presence of a few customers with extremely low or high usage values suggests moderate variability in customer calling behavior, which may influence churn prediction patterns.
+
+```{r}
+# International Plan vs Churn
+ggplot(churn_train,
+       aes(x = International.plan,
+           fill = Churn)) +
+  
+  geom_bar(position = "fill") +
+  
+  scale_fill_discrete(
+    labels = c(
+      "Retained Customer",
+      "Customer Left"
+    )
+  ) +
+  
+  labs(
+    title = "Figure 5. Customer Status by International Plan",
+    x = "International Plan",
+    y = "Proportion",
+    fill = "Customer Status"
+  ) +
+  
+  theme_minimal()
+```
+
+Figure 5 indicates that customers subscribed to an international plan exhibited a noticeably higher proportion of customer departures compared to customers without an international plan. This suggests that having an international plan may be associated with an increased likelihood of churn and could serve as an important predictor variable in the machine learning models.
+
+### 2.4 Model Building
+
+Logistic Regression was selected as a baseline regression-based classification model because it is widely used for binary outcome prediction problems such as customer churn classification. The model estimates the probability of customer churn based on predictor variables and provides interpretable coefficients that help identify factors associated with customer retention and cancellation behavior.
+
+```{r}
+# Logistic Regression Model
+log_model <- glm(
+  Churn ~ .,
+  data = train_encoded,
+  family = binomial
+)
+
+# Model summary
+summary(log_model)
+```
+
+The logistic regression results indicate that several predictor variables significantly influenced customer churn behavior. Variables such as International.plan.No, Voice.mail.plan.No, Total.intl.calls, and Customer.service.calls were statistically significant predictors, suggesting that customer subscription features, international calling behavior, and frequent customer service interactions are associated with churn probability. In particular, the positive coefficient for Customer.service.calls indicates that customers who contacted customer service more frequently were more likely to leave the telecom service, which aligns with the earlier exploratory data analysis findings.  
+
+The model also produced two undefined coefficients due to singularities, specifically for International.plan.Yes and Voice.mail.plan.Yes, which occurred because one-hot encoding created perfectly correlated complementary variables. This is expected in logistic regression when both dummy categories are included simultaneously and does not necessarily invalidate the model. Additionally, the reduction from the null deviance (2212.2) to the residual deviance (1729.6) suggests that the predictor variables improved the model’s ability to explain customer churn outcomes compared to a model without predictors.  
+```{r}
+# Predicted probabilities
+log_probs <- stats::predict(
+  log_model,
+  newdata = test_encoded,
+  type = "response"
+)
+
+# Convert probabilities into class predictions
+log_preds <- ifelse(log_probs > 0.5, 1, 0)
+
+# Convert to factor
+log_preds <- factor(log_preds,
+                    levels = c(0,1))
+
+# Actual values
+actual_values <- factor(
+  test_encoded$Churn,
+  levels = c(0,1)
+)
+
+# Confusion matrix
+cm_log <- confusionMatrix(log_preds, actual_values, positive = "1")
+
+# Calculate F1-score
+f1_score <- 2 * (
+  (as.numeric(cm_log$byClass["Pos Pred Value"]) *
+   as.numeric(cm_log$byClass["Sensitivity"])) /
+  
+  (as.numeric(cm_log$byClass["Pos Pred Value"]) +
+   as.numeric(cm_log$byClass["Sensitivity"]))
+)
+
+f1_score
+cm_log
+```
+
+The logistic regression model achieved an overall accuracy of 85.16%; however, this performance was primarily influenced by the majority retained-customer class rather than effective churn detection. The model produced a recall/sensitivity of 16.84%, meaning that only a small proportion of actual churned customers were correctly identified, while the precision value of 44.44% indicates that less than half of the customers predicted to leave actually churned. Additionally, the high specificity of 96.50% shows that the model was highly effective at correctly identifying retained customers, whereas the balanced accuracy of 56.67% suggests uneven predictive performance between retained and churned customer classes due to class imbalance.  
+
+Furthermore, the F1-score of 24.43%, which represents the harmonic balance between precision and recall, indicates weak overall churn detection capability despite the model’s high general accuracy. These findings suggest that the logistic regression model favored predictions toward retained customers and struggled to effectively identify high-risk churn cases, indicating that additional refinement techniques or alternative machine learning models may be necessary to improve churn prediction performance.  
+
+```{r}
+# Confusion matrix table
+cm <- table(
+  Predicted = log_preds,
+  Actual = actual_values
+)
+
+# Convert to dataframe
+cm_df <- as.data.frame(cm)
+
+# Plot confusion matrix
+ggplot(cm_df,
+       aes(x = Actual,
+           y = Predicted,
+           fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq),
+            size = 6) +
+  scale_x_discrete(
+    labels = c(
+      "0" = "Retained Customer",
+      "1" = "Customer Left"
+    )
+  ) +
+  scale_y_discrete(
+    labels = c(
+      "0" = "Retained Customer",
+      "1" = "Customer Left"
+    )
+  ) +
+  labs(
+    title = "Figure 6. Confusion Matrix for Logistic Regression",
+    x = "Actual Class",
+    y = "Predicted Class",
+    fill = "Count"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      hjust = 0.5,
+      face = "bold"
+    )
+  )
+```
+
+Figure 6 further illustrates that the model was highly effective at predicting retained customers but less effective at detecting customer departures due to the class imbalance present in the dataset. This suggests that the logistic regression model may be biased toward the majority retained-customer class, potentially reducing its ability to accurately detect high-risk churn customers.
+
+```{r}
+# ROC object
+roc_obj <- roc(
+  actual_values,
+  as.numeric(log_probs)
+)
+
+# Plot ROC curve
+plot(
+  roc_obj,
+  main = "Figure 7. ROC Curve for Logistic Regression"
+)
+
+# AUC value
+auc(roc_obj)
+
+# AUC value
+log_auc <- auc(roc_obj)
+
+log_auc
+```
+
+Figure 7 illustrates the Receiver Operating Characteristic (ROC) curve for the logistic regression model, which evaluates the model’s ability to distinguish between retained customers and customers who left the telecom service across varying classification thresholds. The ROC curve remains substantially above the diagonal reference line, indicating that the model performs considerably better than random chance in identifying churn outcomes and demonstrates good discriminative capability. Additionally, the model achieved an ROC-AUC value of 0.826, suggesting that the logistic regression model was reasonably effective at ranking customers according to their likelihood of churn.  
+
+The steep upward movement of the curve at lower false positive rates suggests that the model can correctly identify a substantial proportion of churn cases before significantly increasing incorrect churn predictions. Overall, the ROC curve and AUC result indicate that the logistic regression model possesses moderate-to-good classification performance, although improvements may still be necessary to strengthen churn detection effectiveness and reduce the misclassification of customers who leave the service.  
+
+Lasso Regression was selected because it improves logistic regression by applying regularization, which helps reduce overfitting and automatically performs feature selection by shrinking less important predictor coefficients toward zero. This makes the model useful for identifying the most influential variables associated with customer churn while improving generalization performance on unseen data.
+
+```{r}
+# Prepare Predictor Matrices
+
+# Predictor matrices
+x_train <- as.matrix(
+  train_encoded %>%
+    dplyr::select(-Churn)
+)
+
+x_test <- as.matrix(
+  test_encoded %>%
+    dplyr::select(-Churn)
+)
+
+# Numeric target variable
+y_train <- as.numeric(as.character(train_encoded$Churn))
+y_test <- as.numeric(as.character(test_encoded$Churn))
+
+# Cross-validation for best lambda
+cv_lasso <- cv.glmnet(
+  x_train,
+  y_train,
+  family = "binomial",
+  alpha = 1
+)
+
+# Plot cross-validation results
+plot(cv_lasso)
+
+# Best lambda value
+cv_lasso$lambda.min
+```
+
+```{r}
+lasso_model <- glmnet(
+  x_train,
+  y_train,
+  family = "binomial",
+  alpha = 1,
+  lambda = cv_lasso$lambda.min
+)
+
+# Model coefficients
+coef(lasso_model)
+```
+
+```{r}
+# Predicted probabilities
+lasso_probs <- predict(
+  lasso_model,
+  s = cv_lasso$lambda.min,
+  newx = x_test,
+  type = "response"
+)
+
+# Convert to class predictions
+lasso_preds <- ifelse(lasso_probs > 0.5, 1, 0)
+
+# Convert to factor
+lasso_preds <- factor(
+  lasso_preds,
+  levels = c(0,1)
+)
+
+# Actual values
+lasso_actual <- factor(
+  y_test,
+  levels = c(0,1)
+)
+
+cm_lasso <- confusionMatrix(
+  lasso_preds,
+  lasso_actual,
+  positive = "1"
+)
+
+# Precision
+lasso_precision <- as.numeric(
+  cm_lasso$byClass["Pos Pred Value"]
+)
+
+# Recall
+lasso_recall <- as.numeric(
+  cm_lasso$byClass["Sensitivity"]
+)
+
+# F1-score
+lasso_f1 <- 2 * (
+  (lasso_precision * lasso_recall) /
+  (lasso_precision + lasso_recall)
+)
+
+lasso_f1
+cm_lasso
+```
+
+```{r}
+# Confusion matrix table
+cm_lasso_table <- table(
+  Predicted = lasso_preds,
+  Actual = lasso_actual
+)
+
+# Convert to dataframe
+cm_lasso_df <- as.data.frame(cm_lasso_table)
+
+# Plot confusion matrix
+ggplot(cm_lasso_df,
+       aes(x = Actual,
+           y = Predicted,
+           fill = Freq)) +
+  
+  geom_tile(color = "white") +
+  
+  geom_text(aes(label = Freq),
+            size = 6) +
+  
+  scale_x_discrete(
+    labels = c(
+      "0" = "Retained Customer",
+      "1" = "Customer Left"
+    )
+  ) +
+  
+  scale_y_discrete(
+    labels = c(
+      "0" = "Retained Customer",
+      "1" = "Customer Left"
+    )
+  ) +
+  
+  labs(
+    title = "Figure 8. Confusion Matrix for Lasso Regression",
+    x = "Actual Class",
+    y = "Predicted Class",
+    fill = "Count"
+  ) +
+  
+  theme_minimal() +
+  
+  theme(
+    plot.title = element_text(
+      hjust = 0.5,
+      face = "bold"
+    )
+  )
+```
+
+```{r}
+# ROC curve
+lasso_roc <- roc(
+  lasso_actual,
+  as.numeric(lasso_probs)
+)
+
+plot(
+  lasso_roc,
+  main = "Figure 9. ROC Curve for Lasso Regression"
+)
+
+# AUC
+auc(lasso_roc)
+```
+
+Overall, the Lasso Regression model demonstrated predictive performance that was highly similar to the standard logistic regression model, indicating that the dataset’s strongest churn predictors were already effectively captured by the baseline model. Through the application of regularization, Lasso slightly improved several evaluation metrics, including accuracy, precision, specificity, balanced accuracy, and F1-score, while maintaining a nearly identical ROC-AUC value. These results suggest that Lasso successfully reduced the influence of weaker or less informative variables without substantially altering the model’s overall classification behavior.
+
+Despite these minor improvements, the model continued to struggle with identifying customers who actually churned, as reflected by the relatively low recall value. This indicates that although Lasso helped simplify and stabilize the model through coefficient shrinkage and feature selection, the class imbalance within the dataset remained a significant challenge affecting churn detection performance. Consequently, the Lasso model primarily improved model regularization and interpretability rather than producing major gains in predictive capability compared to standard logistic regression.
+
+Decision Tree was selected because it provides an interpretable tree-based classification approach capable of capturing nonlinear relationships and interaction effects between predictor variables. Unlike regression-based models, decision trees classify observations through hierarchical decision rules, making them useful for understanding customer churn behavior and identifying important splitting variables associated with customer retention and cancellation.
+
+```{r}
+# Decision Tree Model
+tree_model <- rpart(
+  Churn ~ .,
+  data = train_encoded,
+  method = "class"
+)
+
+rpart.plot(
+  tree_model,
+  type = 3,
+  extra = 104,
+  fallen.leaves = TRUE,
+  box.palette = "Blues",
+  shadow.col = "gray",
+  nn = TRUE,
+  main = "Figure 10. Decision Tree for Customer Churn"
+)
+
+tree_model$variable.importance
+```
+
+```{r}
+# Predicted probabilities
+tree_probs <- predict(
+  tree_model,
+  newdata = test_encoded,
+  type = "prob"
+)[,2]
+
+# Class predictions
+tree_preds <- ifelse(tree_probs > 0.5, 1, 0)
+
+# Convert to factor
+tree_preds <- factor(
+  tree_preds,
+  levels = c(0,1)
+)
+
+# Actual values
+tree_actual <- factor(
+  test_encoded$Churn,
+  levels = c(0,1)
+)
+
+cm_tree <- confusionMatrix(
+  tree_preds,
+  tree_actual,
+  positive = "1"
+)
+
+# Precision
+tree_precision <- as.numeric(
+  cm_tree$byClass["Pos Pred Value"]
+)
+
+# Recall
+tree_recall <- as.numeric(
+  cm_tree$byClass["Sensitivity"]
+)
+
+# F1-score
+tree_f1 <- 2 * (
+  (tree_precision * tree_recall) /
+  (tree_precision + tree_recall)
+)
+
+tree_f1
+cm_tree
+
+# ROC object
+tree_roc <- roc(
+  tree_actual,
+  tree_probs
+)
+
+# Plot ROC
+plot(
+  tree_roc,
+  main = "Figure 11. ROC Curve for Decision Tree"
+)
+
+# AUC
+auc(tree_roc)
+```
+
+Random Forest was selected because it is an ensemble tree-based learning method that combines multiple decision trees to improve predictive accuracy, reduce overfitting, and increase model stability. Unlike a single decision tree, Random Forest aggregates predictions from numerous trees through majority voting, making it highly effective for handling nonlinear relationships and complex customer churn patterns.
+
+```{r}
+# Train Random Forest Model
+
+rf_model <- randomForest(
+  Churn ~ .,
+  data = train_encoded,
+  ntree = 100,
+  importance = TRUE
+)
+
+# Display model
+rf_model
+
+# Variable Importance Plot
+varImpPlot(
+  rf_model,
+  main = "Figure 12. Variable Importance for Random Forest"
+)
+```
+
+```{r}
+# Predicted probabilities
+rf_probs <- predict(
+  rf_model,
+  newdata = test_encoded,
+  type = "prob"
+)[,2]
+
+# Class predictions
+rf_preds <- ifelse(rf_probs > 0.5, 1, 0)
+
+# Convert to factor
+rf_preds <- factor(
+  rf_preds,
+  levels = c(0,1)
+)
+
+# Actual values
+rf_actual <- factor(
+  test_encoded$Churn,
+  levels = c(0,1)
+)
+
+# Confusion Matrix
+cm_rf <- confusionMatrix(
+  rf_preds,
+  rf_actual,
+  positive = "1"
+)
+
+# Precision
+rf_precision <- as.numeric(
+  cm_rf$byClass["Pos Pred Value"]
+)
+
+# Recall
+rf_recall <- as.numeric(
+  cm_rf$byClass["Sensitivity"]
+)
+
+# F1-score
+rf_f1 <- 2 * (
+  (rf_precision * rf_recall) /
+  (rf_precision + rf_recall)
+)
+
+rf_f1
+cm_rf
+
+# ROC object
+rf_roc <- roc(
+  rf_actual,
+  rf_probs
+)
+
+# Plot ROC curve
+plot(
+  rf_roc,
+  main = "Figure 13. ROC Curve for Random Forest"
+)
+
+# AUC value
+auc(rf_roc)
+```
+
+Gradient Boosting Classifier was selected because it is an advanced ensemble learning technique that sequentially builds multiple weak decision trees while minimizing prediction errors from previous iterations. The model is capable of capturing complex nonlinear relationships and improving predictive performance, making it highly suitable for customer churn classification tasks involving imbalanced and behavior-based datasets.
+
+```{r}
+# Create copies for Gradient Boosting
+gb_train <- train_encoded
+gb_test <- test_encoded
+
+# Convert Churn to numeric 0/1
+gb_train$Churn <- as.numeric(
+  as.character(gb_train$Churn)
+)
+
+gb_test$Churn <- as.numeric(
+  as.character(gb_test$Churn)
+)
+
+# Gradient Boosting Model
+gb_model <- gbm(
+  formula = Churn ~ .,
+  distribution = "bernoulli",
+  data = gb_train,
+  
+  n.trees = 100,
+  interaction.depth = 3,
+  shrinkage = 0.05,
+  cv.folds = 5,
+  
+  n.minobsinnode = 10,
+  verbose = FALSE
+)
+
+# Model summary
+# Increase plot margins
+par(mar = c(5, 14, 4, 2))
+
+summary(
+  gb_model,
+  cex.names = 0.7,
+  las = 1,
+  main = "Figure 14. Variable Importance for Gradient Boosting"
+)
+```
+
+```{r}
+# Predicted probabilities
+gb_probs <- predict(
+  gb_model,
+  newdata = gb_test,
+  n.trees = 100,
+  type = "response"
+)
+
+# Convert probabilities into classes
+gb_preds <- ifelse(gb_probs > 0.5, 1, 0)
+
+# Convert to factor
+gb_preds <- factor(
+  gb_preds,
+  levels = c(0,1)
+)
+
+# Actual values
+gb_actual <- factor(
+  test_encoded$Churn,
+  levels = c(0,1)
+)
+
+# Confusion Matrix
+cm_gb <- confusionMatrix(
+  gb_preds,
+  gb_actual,
+  positive = "1"
+)
+
+# Precision
+gb_precision <- as.numeric(
+  cm_gb$byClass["Pos Pred Value"]
+)
+
+# Recall
+gb_recall <- as.numeric(
+  cm_gb$byClass["Sensitivity"]
+)
+
+# F1-score
+gb_f1 <- 2 * (
+  (gb_precision * gb_recall) /
+  (gb_precision + gb_recall)
+)
+
+gb_f1
+cm_gb
+
+# ROC object
+gb_roc <- roc(
+  gb_actual,
+  gb_probs
+)
+
+# Plot ROC curve
+plot(
+  gb_roc,
+  main = "Figure 15. ROC Curve for Gradient Boosting"
+)
+
+# AUC value
+auc(gb_roc)
+```
+## *3. Model Results / Evaluation*
 ## *4. Discussion*
 ## *5. Conclusion*
 

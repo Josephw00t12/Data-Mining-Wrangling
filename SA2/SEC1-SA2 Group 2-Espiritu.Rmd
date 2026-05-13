@@ -3,13 +3,14 @@ title: "SEC1-SA2 Group 2-Espiritu"
 author: "Espiritu, Joseph Raphael"
 date: "2026-05-10"
 output:
-  html_document: default
   pdf_document:
     latex_engine: xelatex
+  github_document: default
+  html_document: default
 ---
 ```{r setup, include=FALSE}
 # Package Install
-# install.packages( c("tidyverse", "caret", "pROC", "car", "corrplot", "e1071", "glmnet", "rpart", "rpart.plot", "randomForest", "gbm"), repos = "https://cloud.r-project.org" )
+# install.packages( c("tidyverse", "caret", "pROC", "car", "corrplot", "e1071", "glmnet", "rpart", "rpart.plot", "randomForest", "gbm", "neuralnet"), repos = "https://cloud.r-project.org" )
 
 library(tidyverse)
 library(caret)
@@ -21,9 +22,9 @@ library(rpart)
 library(rpart.plot)
 library(randomForest)
 library(gbm)
-
-knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+library(neuralnet)
 ```
+
 
 # **A. Machine Learning Models for Customer Churn**   
   *Title: Predicting Customer Churn with Regression-Based and Tree-Based Methods*  
@@ -33,7 +34,6 @@ knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 Customer churn, also known as customer attrition or turnover, is the percentage of customers who stop doing business, cancel subscriptions, or discontinue using a company’s services over a specific period. Predicting customer behavior through data-driven approaches allows companies to identify customers who are likely to cancel their subscriptions and implement retention strategies before churn occurs. This study utilizes the Orange Telecom Churn Dataset, which contains customer usage information and churn labels indicating whether a customer canceled their subscription. The dataset was divided into an 80% training and cross-validation set (churn-bigml-80) and a 20% testing and evaluation set (churn-bigml-20). The primary objective of this study is to build and evaluate regression-based and tree-based machine learning models capable of predicting customer churn and comparing their predictive performance.  
 
 ## *2. Methodology*
-
 ### 2.1 Data Description
 ```{r}
 # Load training and testing datasets
@@ -149,7 +149,7 @@ sum(is.na(test_encoded))
 
 The dataset underwent several preprocessing procedures to prepare the data for machine learning analysis. Non-predictive identifier variables such as State and Area.code were removed to reduce irrelevant information, while the target variable Churn was converted into a binary factor variable where 0 represented non-churn customers and 1 represented churn customers. Additionally, categorical variables were transformed into factor data types and encoded using one-hot encoding to convert them into numerical representations compatible with machine learning algorithms, followed by missing value verification to ensure data quality and completeness.
 
-### 2.3  Exploratory Data Analysis
+### 2.3 Exploratory Data Analysis
 
 ```{r}
 # A. Churn Rate Analysis
@@ -308,7 +308,97 @@ log_model <- glm(
   data = train_encoded,
   family = binomial
 )
+```
 
+Lasso Regression was selected because it improves logistic regression by applying regularization, which helps reduce overfitting and automatically performs feature selection by shrinking less important predictor coefficients toward zero. This makes the model useful for identifying the most influential variables associated with customer churn while improving generalization performance on unseen data.
+
+```{r}
+# Prepare Predictor Matrices
+
+# Predictor matrices
+x_train <- as.matrix(
+  train_encoded %>%
+    dplyr::select(-Churn)
+)
+
+x_test <- as.matrix(
+  test_encoded %>%
+    dplyr::select(-Churn)
+)
+
+# Numeric target variable
+y_train <- as.numeric(as.character(train_encoded$Churn))
+y_test <- as.numeric(as.character(test_encoded$Churn))
+
+# Cross-validation for best lambda
+cv_lasso <- cv.glmnet(
+  x_train,
+  y_train,
+  family = "binomial",
+  alpha = 1
+)
+```
+
+Decision Tree was selected because it provides an interpretable tree-based classification approach capable of capturing nonlinear relationships and interaction effects between predictor variables. Unlike regression-based models, decision trees classify observations through hierarchical decision rules, making them useful for understanding customer churn behavior and identifying important splitting variables associated with customer retention and cancellation.
+
+```{r}
+# Decision Tree Model
+tree_model <- rpart(
+  Churn ~ .,
+  data = train_encoded,
+  method = "class"
+)
+```
+
+Random Forest was selected because it is an ensemble tree-based learning method that combines multiple decision trees to improve predictive accuracy, reduce overfitting, and increase model stability. Unlike a single decision tree, Random Forest aggregates predictions from numerous trees through majority voting, making it highly effective for handling nonlinear relationships and complex customer churn patterns.
+
+```{r}
+# Train Random Forest Model
+rf_model <- randomForest(
+  Churn ~ .,
+  data = train_encoded,
+  ntree = 100,
+  importance = TRUE
+)
+```
+
+Gradient Boosting Classifier was selected because it is an advanced ensemble learning technique that sequentially builds multiple weak decision trees while minimizing prediction errors from previous iterations. The model is capable of capturing complex nonlinear relationships and improving predictive performance, making it highly suitable for customer churn classification tasks involving imbalanced and behavior-based datasets.
+
+```{r}
+# Create copies for Gradient Boosting
+gb_train <- train_encoded
+gb_test <- test_encoded
+
+# Convert Churn to numeric 0/1
+gb_train$Churn <- as.numeric(
+  as.character(gb_train$Churn)
+)
+
+gb_test$Churn <- as.numeric(
+  as.character(gb_test$Churn)
+)
+
+# Gradient Boosting Model
+gb_model <- gbm(
+  formula = Churn ~ .,
+  distribution = "bernoulli",
+  data = gb_train,
+  
+  n.trees = 100,
+  interaction.depth = 3,
+  shrinkage = 0.05,
+  cv.folds = 5,
+  
+  n.minobsinnode = 10,
+  verbose = FALSE
+)
+```
+
+## *3. Model Results / Evaluation*
+
+### Logistic Regression Results
+
+```{r}
 # Model summary
 summary(log_model)
 ```
@@ -316,6 +406,7 @@ summary(log_model)
 The logistic regression results indicate that several predictor variables significantly influenced customer churn behavior. Variables such as International.plan.No, Voice.mail.plan.No, Total.intl.calls, and Customer.service.calls were statistically significant predictors, suggesting that customer subscription features, international calling behavior, and frequent customer service interactions are associated with churn probability. In particular, the positive coefficient for Customer.service.calls indicates that customers who contacted customer service more frequently were more likely to leave the telecom service, which aligns with the earlier exploratory data analysis findings.  
 
 The model also produced two undefined coefficients due to singularities, specifically for International.plan.Yes and Voice.mail.plan.Yes, which occurred because one-hot encoding created perfectly correlated complementary variables. This is expected in logistic regression when both dummy categories are included simultaneously and does not necessarily invalidate the model. Additionally, the reduction from the null deviance (2212.2) to the residual deviance (1729.6) suggests that the predictor variables improved the model’s ability to explain customer churn outcomes compared to a model without predictors.  
+
 ```{r}
 # Predicted probabilities
 log_probs <- stats::predict(
@@ -428,42 +519,26 @@ log_auc
 
 Figure 7 illustrates the Receiver Operating Characteristic (ROC) curve for the logistic regression model, which evaluates the model’s ability to distinguish between retained customers and customers who left the telecom service across varying classification thresholds. The ROC curve remains substantially above the diagonal reference line, indicating that the model performs considerably better than random chance in identifying churn outcomes and demonstrates good discriminative capability. Additionally, the model achieved an ROC-AUC value of 0.826, suggesting that the logistic regression model was reasonably effective at ranking customers according to their likelihood of churn.  
 
-The steep upward movement of the curve at lower false positive rates suggests that the model can correctly identify a substantial proportion of churn cases before significantly increasing incorrect churn predictions. Overall, the ROC curve and AUC result indicate that the logistic regression model possesses moderate-to-good classification performance, although improvements may still be necessary to strengthen churn detection effectiveness and reduce the misclassification of customers who leave the service.  
+The steep upward movement of the curve at lower false positive rates suggests that the model can correctly identify a substantial proportion of churn cases before significantly increasing incorrect churn predictions. Overall, the ROC curve and AUC result indicate that the logistic regression model possesses moderate-to-good classification performance, although improvements may still be necessary to strengthen churn detection effectiveness and reduce the misclassification of customers who leave the service.
 
-Lasso Regression was selected because it improves logistic regression by applying regularization, which helps reduce overfitting and automatically performs feature selection by shrinking less important predictor coefficients toward zero. This makes the model useful for identifying the most influential variables associated with customer churn while improving generalization performance on unseen data.
+### Lasso Regression Results
 
 ```{r}
-# Prepare Predictor Matrices
-
-# Predictor matrices
-x_train <- as.matrix(
-  train_encoded %>%
-    dplyr::select(-Churn)
-)
-
-x_test <- as.matrix(
-  test_encoded %>%
-    dplyr::select(-Churn)
-)
-
-# Numeric target variable
-y_train <- as.numeric(as.character(train_encoded$Churn))
-y_test <- as.numeric(as.character(test_encoded$Churn))
-
-# Cross-validation for best lambda
-cv_lasso <- cv.glmnet(
-  x_train,
-  y_train,
-  family = "binomial",
-  alpha = 1
-)
-
 # Plot cross-validation results
-plot(cv_lasso)
+plot(
+  cv_lasso,
+  main = "Figure 8. Cross-Validation Curve for Lasso Regression",
+  xlab = expression(-Log(lambda)),
+  ylab = "Binomial Deviance",
+  col = "red",
+  lwd = 2
+)
 
 # Best lambda value
 cv_lasso$lambda.min
 ```
+
+Figure 8 presents the cross-validation results for the Lasso Regression model, where binomial deviance was evaluated across different lambda regularization values to determine the optimal model complexity. The curve demonstrates that prediction error steadily decreased as the lambda value was optimized, eventually stabilizing at lower deviance levels, indicating improved model generalization and reduced overfitting. The selected optimal lambda value of 0.0002108198 represents the regularization strength that minimized cross-validation error while maintaining stable predictive performance.  
 
 ```{r}
 lasso_model <- glmnet(
@@ -477,6 +552,8 @@ lasso_model <- glmnet(
 # Model coefficients
 coef(lasso_model)
 ```
+
+The coefficient output further shows that Lasso Regression retained the most influential predictors while shrinking weaker variables toward values closer to zero. Variables such as international plan, voice mail plan, customer service calls, and usage-related features remained influential in predicting customer churn behavior, indicating that customer subscription characteristics and service interaction variables played important roles in the model’s classification decisions.  
 
 ```{r}
 # Predicted probabilities
@@ -529,58 +606,6 @@ cm_lasso
 ```
 
 ```{r}
-# Confusion matrix table
-cm_lasso_table <- table(
-  Predicted = lasso_preds,
-  Actual = lasso_actual
-)
-
-# Convert to dataframe
-cm_lasso_df <- as.data.frame(cm_lasso_table)
-
-# Plot confusion matrix
-ggplot(cm_lasso_df,
-       aes(x = Actual,
-           y = Predicted,
-           fill = Freq)) +
-  
-  geom_tile(color = "white") +
-  
-  geom_text(aes(label = Freq),
-            size = 6) +
-  
-  scale_x_discrete(
-    labels = c(
-      "0" = "Retained Customer",
-      "1" = "Customer Left"
-    )
-  ) +
-  
-  scale_y_discrete(
-    labels = c(
-      "0" = "Retained Customer",
-      "1" = "Customer Left"
-    )
-  ) +
-  
-  labs(
-    title = "Figure 8. Confusion Matrix for Lasso Regression",
-    x = "Actual Class",
-    y = "Predicted Class",
-    fill = "Count"
-  ) +
-  
-  theme_minimal() +
-  
-  theme(
-    plot.title = element_text(
-      hjust = 0.5,
-      face = "bold"
-    )
-  )
-```
-
-```{r}
 # ROC curve
 lasso_roc <- roc(
   lasso_actual,
@@ -598,18 +623,12 @@ auc(lasso_roc)
 
 Overall, the Lasso Regression model demonstrated predictive performance that was highly similar to the standard logistic regression model, indicating that the dataset’s strongest churn predictors were already effectively captured by the baseline model. Through the application of regularization, Lasso slightly improved several evaluation metrics, including accuracy, precision, specificity, balanced accuracy, and F1-score, while maintaining a nearly identical ROC-AUC value. These results suggest that Lasso successfully reduced the influence of weaker or less informative variables without substantially altering the model’s overall classification behavior.
 
-Despite these minor improvements, the model continued to struggle with identifying customers who actually churned, as reflected by the relatively low recall value. This indicates that although Lasso helped simplify and stabilize the model through coefficient shrinkage and feature selection, the class imbalance within the dataset remained a significant challenge affecting churn detection performance. Consequently, the Lasso model primarily improved model regularization and interpretability rather than producing major gains in predictive capability compared to standard logistic regression.
+Despite these minor improvements, the model continued to struggle with identifying customers who actually churned, as reflected by the relatively low recall value. This indicates that although Lasso helped simplify and stabilize the model through coefficient shrinkage and feature selection, the class imbalance within the dataset remained a significant challenge affecting churn detection performance. Consequently, the Lasso model primarily improved model regularization and interpretability rather than producing major gains in predictive capability compared to standard logistic regression.  
 
-Decision Tree was selected because it provides an interpretable tree-based classification approach capable of capturing nonlinear relationships and interaction effects between predictor variables. Unlike regression-based models, decision trees classify observations through hierarchical decision rules, making them useful for understanding customer churn behavior and identifying important splitting variables associated with customer retention and cancellation.
+
+### Decision Tree Results
 
 ```{r}
-# Decision Tree Model
-tree_model <- rpart(
-  Churn ~ .,
-  data = train_encoded,
-  method = "class"
-)
-
 rpart.plot(
   tree_model,
   type = 3,
@@ -623,6 +642,10 @@ rpart.plot(
 
 tree_model$variable.importance
 ```
+
+Figure 10 presents the Decision Tree model used for customer churn classification. The model primarily utilized variables such as total day minutes, customer service calls, international plan, total international calls, and voice mail plan to partition customers into retention and churn groups. Variables appearing near the top of the tree, particularly total day minutes and customer service calls, were identified as the most influential predictors because they contributed most strongly to early classification splits and decision-making behavior.  
+
+The variable importance results further indicate that total day charge and total day minutes were the strongest predictors in the model, followed by customer service calls and international usage variables. This suggests that customer calling behavior, service usage intensity, and support-related interactions played substantial roles in predicting whether customers remained subscribed or left the telecom service.  
 
 ```{r}
 # Predicted probabilities
@@ -671,7 +694,13 @@ tree_f1 <- 2 * (
 
 tree_f1
 cm_tree
+```
 
+The Decision Tree model demonstrated strong overall classification performance, achieving an accuracy of 95.65%, which substantially exceeded the no-information rate of 85.76%. The model correctly classified 563 retained customers and 75 churned customers, while only misclassifying 20 churned customers as retained and 9 retained customers as churned. Additionally, the model achieved a precision value of 89.29%, recall/sensitivity of 78.95%, specificity of 98.43%, balanced accuracy of 88.69%, and an F1-score of 83.80%, indicating strong capability in identifying both retained and churned customers.  
+
+Compared to the previous logistic regression and Lasso Regression models, the Decision Tree substantially improved recall and F1-score performance, indicating much stronger churn detection ability. The higher recall value suggests that the model was significantly more effective at correctly identifying customers who left the telecom service, while the high specificity demonstrates strong performance in recognizing retained customers as well.
+
+```{r}
 # ROC object
 tree_roc <- roc(
   tree_actual,
@@ -688,18 +717,11 @@ plot(
 auc(tree_roc)
 ```
 
-Random Forest was selected because it is an ensemble tree-based learning method that combines multiple decision trees to improve predictive accuracy, reduce overfitting, and increase model stability. Unlike a single decision tree, Random Forest aggregates predictions from numerous trees through majority voting, making it highly effective for handling nonlinear relationships and complex customer churn patterns.
+Figure 11 illustrates the ROC curve for the Decision Tree model, which achieved an ROC-AUC value of 0.8946, indicating very good overall predictive performance and improved class separation compared to the logistic regression and Lasso Regression models. The steep rise of the ROC curve at lower false positive rates suggests that the Decision Tree effectively identified churn cases while maintaining relatively low misclassification of retained customers, demonstrating improved balance between sensitivity and specificity.  
+
+### Random Forest Results
 
 ```{r}
-# Train Random Forest Model
-
-rf_model <- randomForest(
-  Churn ~ .,
-  data = train_encoded,
-  ntree = 100,
-  importance = TRUE
-)
-
 # Display model
 rf_model
 
@@ -709,6 +731,8 @@ varImpPlot(
   main = "Figure 12. Variable Importance for Random Forest"
 )
 ```
+
+Figure 12 presents the variable importance measures generated by the Random Forest model using Mean Decrease Accuracy and Mean Decrease Gini metrics. The results indicate that customer service calls, total day minutes, total day charge, and international usage variables were among the most influential predictors of customer churn. These findings suggest that customer communication behavior, service usage intensity, and interactions with customer support played major roles in the model’s classification decisions.
 
 ```{r}
 # Predicted probabilities
@@ -758,7 +782,13 @@ rf_f1 <- 2 * (
 
 rf_f1
 cm_rf
+```
 
+The Random Forest model demonstrated excellent classification performance, achieving an overall accuracy of 95.80%, which substantially exceeded the no-information rate of 85.76%. The model correctly classified 567 retained customers and 72 churned customers, while only misclassifying 23 churned customers as retained and 5 retained customers as churned. Additionally, the model achieved a precision value of 93.51%, recall/sensitivity of 75.79%, specificity of 99.13%, balanced accuracy of 87.46%, and an F1-score of 83.72%, indicating strong capability in identifying both retained and churned customers.
+
+Compared to the Decision Tree model, the Random Forest slightly improved overall accuracy and specificity while maintaining similarly strong recall and F1-score performance. These results suggest that combining multiple decision trees through ensemble learning improved model stability and reduced misclassification errors.  
+
+```{r}
 # ROC object
 rf_roc <- roc(
   rf_actual,
@@ -775,39 +805,12 @@ plot(
 auc(rf_roc)
 ```
 
-Gradient Boosting Classifier was selected because it is an advanced ensemble learning technique that sequentially builds multiple weak decision trees while minimizing prediction errors from previous iterations. The model is capable of capturing complex nonlinear relationships and improving predictive performance, making it highly suitable for customer churn classification tasks involving imbalanced and behavior-based datasets.
+Figure 13 Random Forest model achieved an ROC-AUC value of 0.9228, representing the highest AUC performance observed thus far among the evaluated models. This result indicates that the model possessed excellent ability to separate churned and retained customers while maintaining strong balance between sensitivity and specificity. The steep upward rise of the ROC curve further suggests that the Random Forest model effectively identified churn cases with relatively low false positive rates.  
+
+### Gradient Boosting Results
 
 ```{r}
-# Create copies for Gradient Boosting
-gb_train <- train_encoded
-gb_test <- test_encoded
-
-# Convert Churn to numeric 0/1
-gb_train$Churn <- as.numeric(
-  as.character(gb_train$Churn)
-)
-
-gb_test$Churn <- as.numeric(
-  as.character(gb_test$Churn)
-)
-
-# Gradient Boosting Model
-gb_model <- gbm(
-  formula = Churn ~ .,
-  distribution = "bernoulli",
-  data = gb_train,
-  
-  n.trees = 100,
-  interaction.depth = 3,
-  shrinkage = 0.05,
-  cv.folds = 5,
-  
-  n.minobsinnode = 10,
-  verbose = FALSE
-)
-
 # Model summary
-# Increase plot margins
 par(mar = c(5, 14, 4, 2))
 
 summary(
@@ -822,7 +825,7 @@ summary(
 # Predicted probabilities
 gb_probs <- predict(
   gb_model,
-  newdata = gb_test,
+  newdata = test_encoded,
   n.trees = 100,
   type = "response"
 )
@@ -842,7 +845,6 @@ gb_actual <- factor(
   levels = c(0,1)
 )
 
-# Confusion Matrix
 cm_gb <- confusionMatrix(
   gb_preds,
   gb_actual,
@@ -867,7 +869,11 @@ gb_f1 <- 2 * (
 
 gb_f1
 cm_gb
+```
 
+Overall, the Gradient Boosting model produced highly competitive predictive performance and demonstrated strong capability in distinguishing retained customers from churned customers. The variable importance results further indicated that total day minutes, customer service calls, total evening minutes, total international calls, and international plan variables were among the most influential predictors affecting churn classification. Although the model achieved slightly lower recall and F1-score values compared to the Random Forest and Decision Tree models, it maintained exceptionally high precision and specificity, suggesting that the model was highly conservative and produced relatively few false positive churn predictions.
+
+```{r}
 # ROC object
 gb_roc <- roc(
   gb_actual,
@@ -883,29 +889,567 @@ plot(
 # AUC value
 auc(gb_roc)
 ```
-## *3. Model Results / Evaluation*
+
+The Gradient Boosting model achieved an ROC-AUC value of 0.9207, indicating excellent overall class separation performance and strong ability to rank customers according to churn likelihood. Although the AUC value was slightly lower than the Random Forest model, the Gradient Boosting classifier still demonstrated highly effective predictive capability and maintained strong balance between sensitivity and specificity across multiple classification thresholds.
+
 ## *4. Discussion*
+
+### **Model Performance Comparison**
+
+The different machine learning models demonstrated varying levels of effectiveness in predicting customer churn within the Orange Telecom dataset. Logistic Regression and Lasso Regression provided solid baseline classification performance and good ROC-AUC values; however, both models struggled to correctly identify churned customers due to the class imbalance present in the dataset. Their relatively low recall and F1-score values indicated that the regression-based approaches tended to favor the majority retained-customer class, resulting in weaker churn detection capability.
+
+In contrast, the tree-based models, particularly the Decision Tree and Random Forest classifiers, substantially improved churn prediction performance. These models achieved significantly higher recall, F1-score, balanced accuracy, and ROC-AUC values, suggesting stronger capability in identifying nonlinear relationships and complex customer behavior patterns associated with churn. Among all evaluated models, the Random Forest classifier achieved the strongest overall predictive performance, producing the highest ROC-AUC value and maintaining excellent balance between precision, specificity, and churn detection ability.
+
+The Gradient Boosting classifier also demonstrated strong predictive capability and excellent precision; however, it produced slightly lower recall and F1-score values compared to the Random Forest model. This suggests that although Gradient Boosting was highly conservative and minimized false positive churn predictions, it was somewhat less effective at identifying all churned customers. Overall, the findings indicate that ensemble tree-based methods provided superior predictive performance compared to traditional regression-based classification models for telecom churn prediction.
+
+### **Class Imbalance and Model Limitations**
+
+One of the primary challenges encountered throughout the analysis was the imbalance between retained customers and churned customers within the dataset. Since retained customers represented the majority class, several models achieved high accuracy values despite exhibiting weaker performance in churn detection. This demonstrates why evaluation metrics such as recall, F1-score, balanced accuracy, and ROC-AUC were more informative than accuracy alone for assessing model effectiveness in this classification problem.
+
+Future improvements could include implementing additional imbalance-handling techniques such as oversampling, undersampling, SMOTE (Synthetic Minority Oversampling Technique), or class weighting to improve churn detection performance. Additional tuning, threshold optimization, and advanced boosting algorithms may also further improve predictive capability and model generalization. Furthermore, future studies could incorporate larger telecom datasets containing customer demographics, billing history, internet service usage, and contract information to strengthen predictive accuracy and real-world applicability.
+
 ## *5. Conclusion*
+
+This study successfully applied and compared multiple machine learning models to predict customer churn using the Orange Telecom Churn Dataset. The analysis included both regression-based and tree-based classification approaches to evaluate their effectiveness in identifying customers likely to leave the telecom service. Exploratory Data Analysis indicated that customer usage behavior, service interaction frequency, and subscription-related variables were important factors associated with churn outcomes. While the regression-based models provided solid baseline predictive performance, the tree-based approaches demonstrated stronger overall classification capability by capturing more complex relationships within the data. Among the evaluated models, the Random Forest classifier produced the best overall predictive performance, achieving the strongest balance across multiple evaluation metrics. Overall, the findings suggest that machine learning methods can serve as valuable tools for telecom companies by supporting customer retention efforts, improving decision-making, and enabling earlier identification of customers at risk of churn.  
+
+
+
+
+-->
+
 
 # **B. Deep Learning Classification Task** 
   *Title: Neural Networks and Logistic Regression on the Default Dataset*
 
 ## *1. Introduction*
 
-
+Customer default prediction has become an important application of machine learning within the financial and banking industry because identifying customers who are likely to miss credit card payments can help institutions reduce financial risk and improve decision-making strategies. This study applies and compares Logistic Regression and Neural Network models using the Default Dataset to predict whether a customer will default on credit card payments based on variables such as income, credit card balance, and student status. In addition to evaluating predictive performance through accuracy, confusion matrix analysis, and ROC-AUC metrics, the study also examines the strengths and limitations of traditional statistical classification methods and deep learning approaches in handling binary classification problems. The analysis aims to determine which modeling technique provides more effective predictive capability while highlighting the importance of machine learning methods in financial risk assessment and customer behavior analysis.
 
 ## *2. Methodology*
-
 ### 2.1 Data Description
-### 2.2 Data Preprocessing
-### 2.3  Exploratory Data Analysis
-### 2.4 Model Building
-### 2.5 Model Evaluation
 
-## *3. Results*
+```{r}
+# Load dataset
+default_data <- read.csv("Default.csv")
+
+# Dataset dimensions
+dim(default_data)
+
+# Variable structure and data types
+str(default_data)
+
+# Summary statistics
+summary(default_data)
+```
+
+The Default Dataset consisted of 10,000 customer observations and 4 variables related to credit card default behavior. The dataset included two categorical variables, namely default and student, and two numerical variables, balance and income. Initial inspection revealed that customer credit card balances varied substantially, ranging from 0 to 2,654.3, with a mean balance of 835.4 and a median of 823.6, indicating moderate variability in customer debt levels. Similarly, customer income values ranged from 772 to 73,554, with an average annual income of 33,517, suggesting a wide distribution of financial capacity among customers. Dataset provided both categorical and continuous financial indicators suitable for binary classification modeling and predictive analysis of customer default behavior.
+
+### 2.2 Data Preprocessing
+
+```{r}
+# Check missing values
+sum(is.na(default_data))
+
+# Convert categorical variables into factors
+default_data$default <- as.factor(default_data$default)
+default_data$student <- as.factor(default_data$student)
+
+# Verify factor conversion
+str(default_data)
+
+# Train-test split
+set.seed(123)
+
+train_index <- createDataPartition(
+  default_data$default,
+  p = 0.8,
+  list = FALSE
+)
+
+default_train <- default_data[train_index, ]
+default_test  <- default_data[-train_index, ]
+
+# Verify dimensions
+dim(default_train)
+dim(default_test)
+
+# Standardize numerical variables
+preproc_values <- preProcess(
+  default_train[, c("balance", "income")],
+  method = c("center", "scale")
+)
+
+# Apply scaling
+default_train[, c("balance", "income")] <- predict(
+  preproc_values,
+  default_train[, c("balance", "income")]
+)
+
+default_test[, c("balance", "income")] <- predict(
+  preproc_values,
+  default_test[, c("balance", "income")]
+)
+
+# Verify preprocessing
+summary(default_train)
+summary(default_test)
+```
+
+Several preprocessing procedures were performed prior to model development to ensure data quality and improve model performance. Initial inspection confirmed that the dataset contained no missing values, eliminating the need for data imputation or removal of incomplete observations. The categorical variables default and student were converted into factor data types to support classification modeling within Logistic Regression and Neural Network algorithms.  
+
+The preprocessing results confirmed that the dataset was successfully standardized prior to model training. After scaling, the numerical variables balance and income exhibited mean values near zero and comparable ranges across both the training and testing datasets, indicating that centering and normalization were properly applied. Standardization reduced differences in variable magnitude, which is particularly important for Neural Network training because large differences in predictor scales can negatively affect learning efficiency and model convergence.
+
+```{r}
+table(default_data$default)
+```
+
+The train-test split further showed that the majority of observations belonged to the non-default class, indicating the presence of class imbalance within the dataset. Specifically, the training dataset contained substantially more customers without default cases compared to customers who defaulted, suggesting that evaluation metrics beyond accuracy, such as ROC-AUC and confusion matrix analysis, would be important for properly assessing classification performance.
+
+### 2.3 Exploratory Data Analysis
+
+```{r}
+# Plot distribution of default variable
+ggplot(default_data, aes(x = default)) +
+  geom_bar(fill = "steelblue") +
+  
+  geom_text(
+    stat = "count",
+    aes(label = after_stat(count)),
+    vjust = -0.5
+  ) +
+  
+  scale_x_discrete(
+    labels = c(
+      "No" = "No Default",
+      "Yes" = "Default"
+    )
+  ) +
+  
+  ylim(0, 10000) +
+  
+  labs(
+    title = "Figure 1. Distribution of Customer Default Status",
+    x = "Default Status",
+    y = "Frequency"
+  ) +
+  
+  theme_minimal() +
+  
+  theme(
+    plot.title = element_text(
+      hjust = 0.5,
+      face = "bold"
+    )
+  )
+
+```
+
+Figure 1 illustrates the distribution of customer default outcomes within the dataset. The results show that the majority of customers did not default on credit card payments, while only a small proportion of customers belonged to the default class. This indicates the presence of class imbalance within the dataset, which may influence model performance and bias predictions toward the majority non-default class.
+
+```{r}
+# Plot boxplot of balance by default status
+ggplot(
+  default_data,
+  aes(x = default,
+      y = balance,
+      fill = default)
+) +
+  
+  geom_boxplot(alpha = 0.8) +
+  
+  scale_x_discrete(
+    labels = c(
+      "No" = "No Default",
+      "Yes" = "Default"
+    )
+  ) +
+  
+  scale_fill_manual(
+    values = c(
+      "steelblue",
+      "tomato"
+    )
+  ) +
+  
+  labs(
+    title = "Figure 2. Credit Card Balance by Default Status",
+    x = "Default Status",
+    y = "Credit Card Balance"
+  ) +
+  
+  theme_minimal() +
+  
+  theme(
+    legend.position = "none",
+    plot.title = element_text(
+      hjust = 0.5,
+      face = "bold"
+    )
+  )
+
+```
+
+Figure 2 presents the distribution of credit card balances according to customer default status. Customers who defaulted generally exhibited substantially higher credit card balances compared to customers who did not default, as reflected by the higher median and overall distribution of the default group. This suggests that increasing credit card balance may be strongly associated with higher probability of default behavior.
+
+```{r}
+# Plot histogram of income by default status
+ggplot(
+  default_data,
+  aes(x = income,
+      fill = default)
+) +
+  
+  geom_histogram(
+    bins = 30,
+    alpha = 0.7,
+    position = "identity"
+  ) +
+  
+  scale_fill_manual(
+    values = c(
+      "steelblue",
+      "tomato"
+    )
+  ) +
+  
+  labs(
+    title = "Figure 3. Income Distribution by Default Status",
+    x = "Income",
+    y = "Frequency",
+    fill = "Default Status"
+  ) +
+  
+  theme_minimal() +
+  
+  theme(
+    plot.title = element_text(
+      hjust = 0.5,
+      face = "bold"
+    )
+  )
+
+```
+
+Figure 3 illustrates the income distribution of customers grouped by default status. The distributions of both default and non-default customers appear to overlap considerably across income levels, suggesting that income alone may not strongly separate customers according to default behavior. Compared to credit card balance, income appears to have weaker discriminatory capability for predicting customer default outcomes.  
+
+```{r}
+
+# Plot proportion of default by student status
+ggplot(
+  default_data,
+  aes(x = student,
+      fill = default)
+) +
+  
+  geom_bar(position = "fill") +
+  
+  scale_y_continuous(labels = scales::percent) +
+  
+  scale_fill_manual(
+    values = c(
+      "steelblue",
+      "tomato"
+    )
+  ) +
+  
+  scale_x_discrete(
+    labels = c(
+      "No" = "Non-Student",
+      "Yes" = "Student"
+    )
+  ) +
+  
+  labs(
+    title = "Figure 4. Default Status by Student Classification",
+    x = "Student Status",
+    y = "Proportion",
+    fill = "Default Status"
+  ) +
+  
+  theme_minimal() +
+  
+  theme(
+    plot.title = element_text(
+      hjust = 0.5,
+      face = "bold"
+    )
+  )
+
+```
+
+Figure 4 presents the proportion of default outcomes according to student classification. Both student and non-student groups were dominated by non-default customers; however, the student group appeared to exhibit a slightly larger proportion of default cases compared to non-students. This suggests that student status may have some influence on default likelihood, although its effect appears less substantial than variables such as credit card balance.
+
+### 2.4 Model Building
+
+Logistic Regression was selected as a baseline classification model because it is widely used for binary outcome prediction problems such as customer default classification. The model estimates the probability of customer default based on predictor variables and provides interpretable coefficients that help identify relationships between customer financial characteristics and default behavior.  
+
+```{r}
+
+# Train Logistic Regression model
+def_log_model <- glm(
+  default ~ student + balance + income,
+  data = default_train,
+  family = "binomial"
+)
+
+```
+
+Neural Networks were selected because they are capable of learning complex nonlinear relationships and interaction patterns between predictor variables that may not be fully captured by traditional regression models. Deep learning approaches are commonly used in financial risk prediction because they can automatically model hidden relationships within customer behavioral and financial data.  
+
+The Neural Network model was constructed using:
+
+one hidden layer
+10 hidden units (neurons)
+dropout regularization to prevent overfitting
+
+The hidden layer utilized the ReLU (Rectified Linear Unit) activation function because it improves computational efficiency and helps reduce vanishing gradient problems during training. The output layer used a sigmoid activation function because the problem involved binary classification, where the model predicts the probability of customer default.
+
+Dropout regularization was incorporated to reduce overfitting during training. The dropout layer randomly deactivates a portion of neurons during each training iteration, preventing the model from becoming overly dependent on specific neurons and improving generalization performance on unseen data.
+
+```{r}
+# =====================================================
+# Prepare Neural Network Dataset
+# =====================================================
+
+# Convert target variable into numeric
+nn_train <- default_train
+nn_test  <- default_test
+
+nn_train$default <- ifelse(
+  nn_train$default == "Yes",
+  1,
+  0
+)
+
+nn_test$default <- ifelse(
+  nn_test$default == "Yes",
+  1,
+  0
+)
+
+# Convert student variable
+nn_train$student <- ifelse(
+  nn_train$student == "Yes",
+  1,
+  0
+)
+
+nn_test$student <- ifelse(
+  nn_test$student == "Yes",
+  1,
+  0
+)
+
+# =====================================================
+# Neural Network Model
+# =====================================================
+
+nn_model <- neuralnet(
+  default ~ student + balance + income,
+  
+  data = nn_train,
+  
+  hidden = 10,
+  
+  linear.output = FALSE,
+  
+  lifesign = "minimal"
+)
+```
+
+## *3. Model Results / Evaluation*
+
+### Logistic Regression Results
+```{r}
+# Model summary
+summary(def_log_model)
+```
+
+The logistic regression model was developed to predict customer default status using student classification, credit card balance, and income as predictor variables. The results indicated that credit card balance was the strongest and most statistically significant predictor of default behavior (p<.001), suggesting that higher balances substantially increased the likelihood of customer default. Student status was also statistically significant (p=.0413), indicating that students exhibited different default tendencies compared to non-students, whereas income was not found to be a significant predictor (p=.1906). Overall, the reduction from the null deviance (2340.6) to the residual deviance (1248.1) suggests that the model substantially improved prediction performance relative to a model without predictors.  
+
+```{r}
+# Predict
+def_log_probs <- predict(
+  def_log_model,
+  newdata = default_test,
+  type = "response"
+)
+
+# Convert probabilities into class predictions
+def_log_preds <- ifelse(
+  def_log_probs > 0.5,
+  "Yes",
+  "No"
+)
+
+# Convert to factor
+def_log_preds <- factor(
+  def_log_preds,
+  levels = c("No", "Yes")
+)
+
+# Actual values
+def_actual_values <- factor(
+  default_test$default,
+  levels = c("No", "Yes")
+)
+
+# Confusion Matrix
+def_cm_log <- confusionMatrix(
+  def_log_preds,
+  def_actual_values,
+  positive = "Yes"
+)
+
+# Precision
+def_log_precision <- as.numeric(
+  def_cm_log$byClass["Pos Pred Value"]
+)
+
+# Recall
+def_log_recall <- as.numeric(
+  def_cm_log$byClass["Sensitivity"]
+)
+
+# F1-score
+def_log_f1 <- 2 * (
+  (def_log_precision * def_log_recall) /
+  (def_log_precision + def_log_recall)
+)
+
+def_log_f1
+def_cm_log
+```
+
+The confusion matrix results demonstrated that the logistic regression model achieved an overall accuracy of 96.95%, indicating strong overall classification performance. The model correctly identified 1,921 non-default cases and 17 default cases, while misclassifying 49 default customers as non-default and 12 non-default customers as default. Despite the high accuracy, the recall or sensitivity value of 25.76% suggests that the model struggled to correctly detect many customers who actually defaulted, likely due to the substantial class imbalance within the dataset. In contrast, the model achieved very high specificity (99.38%), indicating excellent performance in correctly identifying customers who did not default. The F1-score of 0.358 further reflects the imbalance between precision and recall, showing that although the model produced accurate overall predictions, its ability to consistently detect default cases remained limited.
+
+```{r}
+#ROC and AUC
+def_log_roc <- roc(
+  def_actual_values,
+  def_log_probs
+)
+
+# Plot ROC curve
+plot(
+  def_log_roc,
+  main = "Figure 6. ROC Curve for Logistic Regression"
+)
+
+# AUC value
+auc(def_log_roc)
+```
+
+Figure 6 illustrates the Receiver Operating Characteristic (ROC) curve for the logistic regression model, which evaluates the model’s ability to distinguish between customers who defaulted and those who did not across varying classification thresholds. The ROC curve remains substantially above the diagonal reference line, indicating that the model performs considerably better than random chance in predicting default outcomes. Furthermore, the model achieved an Area Under the Curve (AUC) value of 0.9531, which indicates excellent discriminative capability and strong overall classification performance. The steep upward trend of the curve at lower false positive rates suggests that the model can effectively identify default cases while maintaining relatively few incorrect positive predictions.
+
+
+### Neural Network Results
+```{r}
+# Model summary
+summary(nn_model)
+```
+
+```{r}
+# Predicted Probabilities
+nn_probs <- compute(
+  nn_model,
+  
+  nn_test[, c(
+    "student",
+    "balance",
+    "income"
+  )]
+)
+
+# Extract probabilities
+nn_probs <- nn_probs$net.result
+
+# Convert to vector
+nn_probs <- as.vector(nn_probs)
+
+# Convert probabilities into predictions
+nn_preds <- ifelse(
+  nn_probs > 0.5,
+  "Yes",
+  "No"
+)
+
+# Convert to factor
+nn_preds <- factor(
+  nn_preds,
+  levels = c("No", "Yes")
+)
+
+# Actual Values
+nn_actual <- factor(
+  ifelse(nn_test$default == 1,
+         "Yes",
+         "No"),
+  
+  levels = c("No", "Yes")
+)
+
+# Confusion Matrix
+cm_nn <- confusionMatrix(
+  nn_preds,
+  nn_actual,
+  positive = "Yes"
+)
+
+# Precision
+nn_precision <- as.numeric(
+  cm_nn$byClass["Pos Pred Value"]
+)
+
+# Recall
+nn_recall <- as.numeric(
+  cm_nn$byClass["Sensitivity"]
+)
+
+# F1-score
+nn_f1 <- 2 * (
+  (nn_precision * nn_recall) /
+  (nn_precision + nn_recall)
+)
+
+cm_nn
+nn_f1
+```
+
+The neural network model was developed using a feedforward neural network architecture containing one hidden layer with 10 hidden units to classify customer default behavior. The model incorporated student status, credit card balance, and income as predictor variables, enabling the network to learn nonlinear relationships between the input features and the probability of default. The summary output indicates that the model successfully completed the training process and generated optimized connection weights throughout the network structure. Compared to traditional logistic regression, the neural network architecture provided greater flexibility in modeling more complex patterns and interactions among predictor variables, allowing for potentially improved classification performance.
+
+The confusion matrix results demonstrated that the neural network model achieved an overall accuracy of 96.95%, indicating strong overall classification capability. The model correctly identified 1,919 non-default cases and 19 default cases, while misclassifying 47 default customers as non-default and 14 non-default customers as default. The model obtained a sensitivity value of 28.79%, indicating a modest improvement in detecting customers who actually defaulted compared to logistic regression. Additionally, the model achieved a specificity of 99.28%, showing excellent performance in correctly identifying customers who did not default. The precision value of 57.58% suggests that more than half of the customers predicted as defaults were correctly classified, while the F1-score of 0.3838 reflects improved balance between precision and recall relative to the logistic regression model. Overall, the neural network demonstrated slightly stronger capability in identifying minority default cases while maintaining high overall predictive accuracy.
+
+```{r}
+# ROC object
+nn_roc <- roc(
+  nn_actual,
+  nn_probs
+)
+
+# Plot ROC curve
+plot(
+  nn_roc,
+  main = "Figure 8. ROC Curve for Neural Network"
+)
+
+# AUC value
+auc(nn_roc)
+```
+
+Figure 8 illustrates the Receiver Operating Characteristic (ROC) curve for the neural network model, which achieved an Area Under the Curve (AUC) value of 0.951, indicating excellent discriminative capability and overall classification performance. The high AUC value demonstrates that the neural network effectively separated default and non-default customers based on the predictor variables included in the model. Although the confusion matrix results indicated some limitations in recall due to the imbalanced nature of the dataset, the ROC-AUC results suggest that the neural network possessed strong overall predictive capability and competitive performance relative to the logistic regression model.  
+
 ## *4. Discussion*
+
+The results of the study demonstrated that both Logistic Regression and Neural Network models were effective in predicting customer default behavior using student status, credit card balance, and income as predictor variables. Both models achieved high overall accuracy and strong ROC-AUC values, indicating excellent discriminative capability in separating default and non-default customers. However, despite the strong overall performance metrics, both models experienced difficulty in correctly identifying minority default cases due to the substantial class imbalance present within the dataset. This imbalance resulted in relatively lower recall and F1-score values, suggesting that many actual default cases were still misclassified as non-default customers. Between the two models, the Neural Network demonstrated slightly improved recall and F1-score performance, indicating a modest improvement in detecting default customers compared to Logistic Regression.  
+
+Although the Neural Network achieved slightly better predictive capability, Logistic Regression remained more interpretable because the model coefficients clearly explained the influence of each predictor variable on default probability. In contrast, the Neural Network functioned as a more complex nonlinear model, making direct interpretation of predictor effects more difficult. The findings suggest that model selection may depend on whether interpretability or predictive performance is prioritized within a financial decision-making context. Future improvements may involve applying resampling techniques such as Synthetic Minority Oversampling Technique (SMOTE), adjusting classification thresholds, incorporating additional financial indicators, or exploring more advanced neural network architectures to improve minority class prediction performance and reduce misclassification errors. Additionally, cross-validation optimization and hyperparameter tuning may further enhance model generalization and predictive accuracy.  
+
 ## *5. Conclusion*
 
-### References:
+This study successfully applied and evaluated Logistic Regression and Neural Network models for predicting customer default behavior using the Default dataset. Exploratory Data Analysis revealed that credit card balance, student classification, and income exhibited meaningful relationships with default outcomes, with balance emerging as the strongest predictor of customer default. Both machine learning models achieved high classification accuracy and strong ROC-AUC values, demonstrating effective capability in distinguishing between default and non-default customers. However, the highly imbalanced nature of the dataset limited the models’ ability to consistently identify minority default cases, resulting in lower recall and F1-score values despite strong overall performance metrics.  
 
-# GitHub repository link:
+Among the evaluated models, the Neural Network demonstrated slightly improved minority class detection performance relative to Logistic Regression, suggesting that nonlinear modeling approaches may better capture complex relationships within financial data. Nevertheless, Logistic Regression remained advantageous in terms of interpretability and simplicity, allowing clearer explanation of predictor effects on default probability. Overall, the findings of this study demonstrate that machine learning techniques can effectively support financial risk assessment and customer default prediction, potentially assisting financial institutions in identifying high-risk customers and improving credit management strategies.  
+
+
+### GitHub repository link: [Espiritu](https://github.com/Josephw00t12/Data-Mining-Wrangling.git
